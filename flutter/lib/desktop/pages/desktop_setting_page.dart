@@ -650,6 +650,15 @@ class _GeneralState extends State<_General> {
         ).marginOnly(left: _kCheckBoxLeftMargin * 3),
       ));
     }
+    children.add(_OptionCheckBox(
+      context,
+      'Hide system tray',
+      kOptionHideTray,
+      isServer: false,
+      update: (_) {
+        // Tray visibility will take effect on next restart
+      },
+    ));
     return _Card(title: 'Other', children: children);
   }
 

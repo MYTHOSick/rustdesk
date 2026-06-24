@@ -216,6 +216,8 @@ const String kOptionKeepAwakeDuringOutgoingSessions = "keep-awake-during-outgoin
 
 const String kOptionShowMobileAction = "showMobileActions";
 
+const String kOptionHideTray = "hide-tray";
+
 const String kUrlActionClose = "close";
 
 const String kTabLabelHomePage = "Home";

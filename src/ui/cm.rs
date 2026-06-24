@@ -1,15 +1,11 @@
 #[cfg(target_os = "linux")]
 use crate::ipc::start_pa;
-use crate::ui_cm_interface::{start_ipc, ConnectionManager, InvokeUiCM};
+use crate::ui_cm_interface::{start_ipc, ConnectionManager, InvokeUiCM, HIDE_CM};
 
 use hbb_common::{allow_err, log};
 use sciter::{make_args, Element, Value, HELEMENT};
 use std::sync::Mutex;
 use std::{ops::Deref, sync::Arc};
-
-lazy_static::lazy_static! {
-    pub static ref HIDE_CM: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
-}
 
 #[derive(Clone, Default)]
 pub struct SciterHandler {
@@ -163,7 +159,7 @@ impl SciterConnectionManager {
     }
 
     fn hide_cm(&self) -> bool {
-        *crate::ui::cm::HIDE_CM.lock().unwrap()
+        *HIDE_CM
     }
 
     fn get_supported_privacy_mode_impls(&self) -> String {
