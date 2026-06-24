@@ -2,6 +2,14 @@
 vcpkg_find_acquire_program(NASM)
 get_filename_component(NASM_EXE_PATH ${NASM} DIRECTORY)
 vcpkg_add_to_path(${NASM_EXE_PATH})
+get_filename_component(RUSTDESK_ROOT "${CURRENT_PORT_DIR}/../../.." ABSOLUTE)
+set(AOM_LOCAL_NASM "${RUSTDESK_ROOT}/.codex-tools/nasm-2.16.03/nasm.exe")
+if(EXISTS "${AOM_LOCAL_NASM}")
+    get_filename_component(AOM_LOCAL_NASM_DIR "${AOM_LOCAL_NASM}" DIRECTORY)
+    vcpkg_add_to_path(PREPEND "${AOM_LOCAL_NASM_DIR}")
+    file(TO_CMAKE_PATH "${AOM_LOCAL_NASM}" AOM_NASM_COMPILER)
+    set(aom_nasm_compiler "-DCMAKE_ASM_NASM_COMPILER=${AOM_NASM_COMPILER}")
+endif()
 
 # Perl is required to build AOM
 vcpkg_find_acquire_program(PERL)
@@ -51,6 +59,7 @@ vcpkg_cmake_configure(
         -DENABLE_TESTDATA=OFF
         -DENABLE_TESTS=OFF
         -DENABLE_TOOLS=OFF
+        ${aom_nasm_compiler}
 )
 
 vcpkg_cmake_install()
