@@ -176,7 +176,7 @@ lazy_static::lazy_static! {
 static CLICK_TIME: AtomicI64 = AtomicI64::new(0);
 
 lazy_static::lazy_static! {
-    pub static ref HIDE_CM: Arc<bool> = Arc::new(true);
+    pub static ref HIDE_CM: Arc<std::sync::Mutex<bool>> = Arc::new(std::sync::Mutex::new(true));
 }
 
 #[derive(Clone)]
@@ -271,7 +271,7 @@ impl<T: InvokeUiCM> ConnectionManager<T> {
         CLIENTS.write().unwrap().insert(id, client.clone());
         // Auto-authorize when connection management window is hidden
         #[cfg(not(any(target_os = "ios")))]
-        if *HIDE_CM {
+        if *HIDE_CM.lock().unwrap() {
             if !authorized {
                 if let Some(c) = CLIENTS.write().unwrap().get_mut(&id) {
                     c.authorized = true;

@@ -1,9 +1,21 @@
+# ============================================================================
+# Sync Upstream and Build
+# ============================================================================
+# 此工作流 2 个功能：
+# 1. 定期从 rustdesk/rustdesk 同步最新代码到本仓库
+# 2. 同步完成后自动构建 Windows x64 版本
+#
+# ⚠ 同步策略说明：
+#   git merge -X ours 确保遇到冲突时始终保留本仓库的修改
+#   即：自定义服务器参数、默认密码、隐藏CM、禁用更新等不会被覆盖
+# ============================================================================
+
 name: Sync Upstream and Build
 
 on:
   schedule:
-    # 每6小时自动检查上游是否有新提交
-    - cron: "0 */6 * * *"
+    # 每12小时自动检查上游是否有新提交
+    - cron: "0 */12 * * *"
   workflow_dispatch:
     # 支持手动触发
 
@@ -12,9 +24,14 @@ env:
   VCPKG_COMMIT_ID: "120deac3062162151622ca4860575a33844ba10b"
 
 jobs:
+  # ─────────────────────────────────────────────
+  #  JOB 1: 同步上游
+  # ─────────────────────────────────────────────
   sync:
-    name: Sync Upstream
+    name: Sync
     runs-on: ubuntu-latest
+    outputs:
+      has_update: ${{ steps.check.outputs.has_update }}
 
     steps:
       - name: Checkout master (full history)
@@ -30,9 +47,6 @@ jobs:
           git config user.name "sync-bot"
           git config user.email "sync-bot@users.noreply.github.com"
 
-      # ─────────────────────────────────────────────
-      #  STEP 1 — Sync main repo from rustdesk/rustdesk
-      # ─────────────────────────────────────────────
       - name: Add upstream remote & fetch
         shell: bash
         run: |
@@ -52,72 +66,62 @@ jobs:
             echo "has_update=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Merge upstream master → master (keep our customizations)
+      - name: Merge upstream → master (-X ours to keep our customizations)
         if: steps.check.outputs.has_update == 'true'
         shell: bash
         run: |
-          # -X ours = 遇到冲突时始终保留我们的版本
-          # 这样自定义修改(服务器参数/密码/自动接受/托盘等)不会被覆盖
-          git merge upstream/master \
-            --no-edit --no-ff -X ours
+          git merge upstream/master --no-edit --no-ff -X ours
 
-      # ─────────────────────────────────────────────
-      #  STEP 2 — Sync hbb_common submodule
-      # ─────────────────────────────────────────────
-      - name: Sync hbb_common submodule (keep our custom config)
+      - name: Init & update submodules
         if: steps.check.outputs.has_update == 'true'
         shell: bash
         run: |
           git submodule update --init --recursive
 
-          cd libs/hbb_common
-          git config user.name "sync-bot"
-          git config user.email "sync-bot@users.noreply.github.com"
-
-          # 添加 hbb_common 官方上游
-          git remote add upstream https://github.com/rustdesk/hbb_common.git
-          git fetch upstream main
-
-          # 合并上游更新，冲突保留我们的版本
-          SUB_COUNT=$(git rev-list --count HEAD..upstream/main)
-          if [ "$SUB_COUNT" -gt "0" ]; then
-            echo "hbb_common is behind upstream by $SUB_COUNT commits, merging..."
-            git merge upstream/main --no-edit --no-ff -X ours
-          else
-            echo "hbb_common is up to date with upstream"
-          fi
-
-      - name: Commit submodule update & push changes
+      - name: Sync hbb_common submodule (keep our config)
         if: steps.check.outputs.has_update == 'true'
         shell: bash
         run: |
-          git add libs/hbb_common
-          git diff --cached --quiet || \
-            git commit -m "chore: sync upstream and update submodule [skip ci]"
-          git push origin master
+          cd libs/hbb_common
+          git config user.name "sync-bot"
+          git config user.email "sync-bot@users.noreply.github.com"
+          git remote add upstream https://github.com/rustdesk/hbb_common.git
+          git fetch upstream main
+          SUB_COUNT=$(git rev-list --count HEAD..upstream/main)
+          if [ "$SUB_COUNT" -gt "0" ]; then
+            echo "hbb_common behind by $SUB_COUNT commits → merging..."
+            git merge upstream/main --no-edit --no-ff -X ours
+          else
+            echo "hbb_common already up to date"
+          fi
 
+      - name: Commit & push
+        if: steps.check.outputs.has_update == 'true'
+        shell: bash
+        run: |
           cd libs/hbb_common
           git push origin main
 
-      - name: Sync complete
-        if: steps.check.outputs.has_update == 'true'
-        run: echo "✅ Synced with upstream successfully!"
-      - name: Already up to date
-        if: steps.check.outputs.has_update == 'false'
-        run: echo "✅ Already up to date with upstream."
+          cd "$GITHUB_WORKSPACE"
+          git add libs/hbb_common
+          git diff --cached --quiet || \
+            git commit -m "chore: sync upstream [skip ci]"
+          git push origin master
 
   # ─────────────────────────────────────────────
-  #  BUILD — 仅在同步完成后执行
+  #  JOB 2: Windows x64 构建
   # ─────────────────────────────────────────────
-  build-windows:
+  build:
     name: Build (Windows x64)
     needs: [sync]
-    # 只在同步成功或有手动触发时构建
-    if: always() && (needs.sync.outputs.skipped == '' || github.event_name == 'workflow_dispatch')
-    runs-on: windows-latest
+    # 仅在有新提交或手动触发时构建
+    if: |
+      always() &&
+      (needs.sync.outputs.has_update == 'true' || github.event_name == 'workflow_dispatch')
+    runs-on: windows-latest-4core
 
     steps:
-      - name: Checkout
+      - name: Checkout with submodules
         uses: actions/checkout@v4
         with:
           ref: master
@@ -136,42 +140,39 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
-      - name: Install LLVM
+      - name: Install LLVM/clang (for bindgen)
         uses: KyleMayes/install-llvm-action@v2
         with:
           version: "15.0.6"
 
-      - name: Setup vcpkg with GitHub Actions cache
+      - name: Setup vcpkg with GitHub Actions binary cache
         uses: lukka/run-vcpkg@v11
         with:
-          vcpkgDirectory: C:\vcpkg
+          vcpkgDirectory: "${{ runner.workspace }}/vcpkg"
           vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
 
       - name: Install vcpkg dependencies
         shell: pwsh
         run: |
-          & "$env:VCPKG_ROOT\vcpkg" install `
-            --triplet x64-windows-static `
-            --x-install-root="$env:VCPKG_ROOT\installed"
+          & "${{ runner.workspace }}\vcpkg\vcpkg" install libvpx libyuv opus aom --triplet x64-windows-static --x-install-root="$env:VCPKG_ROOT\installed"
 
-      - name: Build RustDesk (debug, for quick feedback)
+      - name: Restore cargo cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            target/
+          key: rustdesk-windows-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            rustdesk-windows-
+
+      - name: Build RustDesk (release)
         shell: bash
-        run: cargo build
+        run: cargo build --release
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: rustdesk-windows-x64-debug
-          path: target/debug/rustdesk.exe
-          if-no-files-found: warn
-
-      - name: Build RustDesk (release, full optimization)
-        shell: bash
-        run: cargo build --release
-
-      - name: Upload release artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: rustdesk-windows-x64-release
+          name: rustdesk-windows-x64
           path: target/release/rustdesk.exe
-          if-no-files-found: warn

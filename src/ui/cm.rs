@@ -159,7 +159,7 @@ impl SciterConnectionManager {
     }
 
     fn hide_cm(&self) -> bool {
-        *HIDE_CM
+        *HIDE_CM.lock().unwrap()
     }
 
     fn get_supported_privacy_mode_impls(&self) -> String {
