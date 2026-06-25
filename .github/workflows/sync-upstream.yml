@@ -19,6 +19,9 @@ on:
   workflow_dispatch:
     # 支持手动触发
 
+permissions:
+  contents: write
+
 env:
   VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
   VCPKG_COMMIT_ID: "120deac3062162151622ca4860575a33844ba10b"
@@ -40,12 +43,15 @@ jobs:
           ref: master
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
+          persist-credentials: true
 
-      - name: Configure git
+      - name: Configure git with credentials
         shell: bash
         run: |
           git config user.name "sync-bot"
           git config user.email "sync-bot@users.noreply.github.com"
+          # Make sure git push uses the GITHUB_TOKEN for authentication
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
 
       - name: Add upstream remote & fetch
         shell: bash
@@ -100,6 +106,7 @@ jobs:
         shell: bash
         run: |
           cd libs/hbb_common
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/MYTHOSick/hbb_common.git
           git push origin main
 
           cd "$GITHUB_WORKSPACE"
@@ -154,7 +161,7 @@ jobs:
       - name: Install vcpkg dependencies
         shell: pwsh
         run: |
-          & "${{ runner.workspace }}\vcpkg\vcpkg" install libvpx libyuv opus aom --triplet x64-windows-static --x-install-root="$env:VCPKG_ROOT\installed"
+          & "${{ runner.workspace }}\vcpkg\vcpkg" install --triplet x64-windows-static --x-install-root="$env:VCPKG_ROOT\installed"
 
       - name: Restore cargo cache
         uses: actions/cache@v4
